@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GXP Murder Party</title>
+    <style>
+        :root { --gxp-dark: #0a0e14; --gxp-accent: #ff007a; --au-green: #46e32d; }
+        body { background-color: var(--gxp-dark); color: white; font-family: 'Segoe UI', sans-serif; text-align: center; margin: 0; padding: 15px; }
+        
+        .logo-gxp { width: 100px; margin-bottom: 15px; }
+        .au-label { text-align: left; width: 90%; margin: 5px auto; font-weight: bold; font-size: 1rem; color: #fff; text-transform: uppercase; }
+        .au-bar-container { width: 90%; height: 40px; background: #333; border: 4px solid #000; margin: 0 auto 20px auto; overflow: hidden; position: relative; }
+        #progress-bar { width: 0%; height: 100%; background: var(--au-green); transition: width 0.4s ease; }
+        #global-percent { font-size: 2.5rem; margin: 0 0 20px 0; font-weight: 900; }
+
+        /* VUES */
+        .view { display: none; flex-direction: column; align-items: center; max-width: 500px; margin: auto; }
+        
+        /* LOGIN (AGRANDI) */
+        #login-view h1 { font-size: 2rem; margin-bottom: 20px; }
+        input#username { 
+            padding: 25px; border-radius: 15px; border: 4px solid var(--gxp-accent); 
+            width: 90%; margin-bottom: 25px; background: #1a1a1a; color: white; 
+            font-size: 2rem; text-align: center; font-weight: bold;
+        }
+        
+        /* TACHES JOUEURS */
+        .task-item { 
+            background: #1a1a1a; border: 2px solid #444; color: white; padding: 20px; 
+            margin: 10px 0; width: 100%; border-radius: 12px; font-weight: bold; 
+            display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem;
+        }
+        .task-item.done { border-color: var(--au-green); color: var(--au-green); background: rgba(70, 227, 45, 0.1); }
+
+        /* GRILLE MJ (Uniquement avec ?screen) */
+        #dashboard-players { display: none; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; width: 95%; margin: auto; }
+        .player-card { background: rgba(255, 255, 255, 0.05); border: 1px solid #444; padding: 10px; border-radius: 8px; text-align: left; font-size: 0.9rem; }
+        
+        .btn-main { background: var(--gxp-accent); color: white; border: none; padding: 20px; border-radius: 12px; font-weight: bold; font-size: 1.2rem; width: 100%; cursor: pointer; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+
+    <div class="au-label">Progression de la Mission</div>
+    <div class="au-bar-container"><div id="progress-bar"></div></div>
+    <div id="global-percent">0%</div>
+
+    <div id="login-view" class="view" style="display: flex;">
+        <h1>IDENTIFICATION</h1>
+        <input type="text" id="username" placeholder="TON PSEUDO" maxlength="12">
+        <button class="btn-main" onclick="joinGame()">Lancer la Mission</button>
+    </div>
+
+    <div id="task-view" class="view">
+        <h2 id="welcome-msg" style="color: var(--gxp-accent); margin-bottom: 20px;"></h2>
+        <div id="tasks-container" style="width:100%"></div>
+        <button onclick="logout()" style="background:none; color:gray; border:none; margin-top:30px; cursor:pointer;">← Changer de pseudo</button>
+    </div>
+
+    <div id="dashboard-players"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7y7jgsCz2FKvgSVkZYw7-ufTOe6jffyA",
+            authDomain: "murder-party-6fa3e.firebaseapp.com",
+            projectId: "murder-party-6fa3e",
+            storageBucket: "murder-party-6fa3e.firebasestorage.app",
+            messagingSenderId: "1042722532630",
+            appId: "1:1042722532630:web:9b2aa413a01e0831d27437",
+            databaseURL: "https://murder-party-6fa3e-default-rtdb.europe-west1.firebasedatabase.app"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const tasksList = ["Câblages Électriques", "Réglage Navigation", "Tri d'Échantillons", "Vidage de Soute", "Stabilisation Core", "Triage de billes", "Puzzle"];
+        let myId = localStorage.getItem('gxp_player_id');
+
+        // --- SYNCHRONISATION JAUGE (POUR TOUS) ---
+        onValue(ref(db, 'players'), (snap) => {
+            const players = snap.val() || {};
+            let done = 0; let total = 0;
+            const mjList = document.getElementById('dashboard-players');
+            mjList.innerHTML = "";
+
+            Object.entries(players).forEach(([id, data]) => {
+                const pTasks = data.tasks || {};
+                const pDone = Object.values(pTasks).filter(t => t === true).length;
+                done += pDone; total += tasksList.length;
+                
+                // Si on est en mode écran, on remplit la liste
+                if (new URLSearchParams(window.location.search).has('screen')) {
+                    mjList.innerHTML += `<div class="player-card"><strong>${data.name}</strong><br>${pDone}/${tasksList.length} tâches</div>`;
+                }
+            });
+
+            const percent = total > 0 ? (done / total) * 100 : 0;
+            document.getElementById('progress-bar').style.width = percent + "%";
+            document.getElementById('global-percent').innerText = Math.floor(percent) + "%";
+        });
+
+        // --- MODE ECRAN EVA ---
+        if (new URLSearchParams(window.location.search).has('screen')) {
+            document.getElementById('dashboard-players').style.display = 'grid';
+            document.getElementById('login-view').style.display = 'none';
+        }
+
+        // --- ACTIONS ---
+        window.joinGame = () => {
+            const name = document.getElementById('username').value;
+            if(!name) return alert("Pseudo requis !");
+            myId = Date.now().toString();
+            localStorage.setItem('gxp_player_id', myId);
+            set(ref(db, 'players/' + myId), { name: name, tasks: {} }).then(() => showTasks());
+        };
+
+        window.toggleTask = (taskId, state) => {
+            update(ref(db, `players/${myId}/tasks`), { [taskId]: state });
+        };
+
+        window.logout = () => { if(confirm("Changer de pseudo ?")) { remove(ref(db, 'players/' + myId)); localStorage.clear(); location.reload(); } };
+
+        function showTasks() {
+            if (new URLSearchParams(window.location.search).has('screen')) return;
+            document.getElementById('login-view').style.display = 'none';
+            document.getElementById('task-view').style.display = 'flex';
+            onValue(ref(db, 'players/' + myId), (snap) => {
+                const data = snap.val(); if(!data) return;
+                document.getElementById('welcome-msg').innerText = "Agent : " + data.name;
+                const container = document.getElementById('tasks-container');
+                container.innerHTML = "";
+                tasksList.forEach((task, i) => {
+                    const isDone = data.tasks && data.tasks['t'+i];
+                    container.innerHTML += `<div class="task-item ${isDone ? 'done' : ''}" onclick="toggleTask('t${i}', ${!isDone})">${task} <span>${isDone?'✔':'○'}</span></div>`;
+                });
+            });
+        }
+        if(myId) showTasks();
+    </script>
+</body>
+</html>
